@@ -374,13 +374,45 @@ def offspring_generation(population, variables, X_dicts, y, X_min, X_max, tourna
 
     return offspring1
 
-# def adjust_rates(epoch, num_epochs, min_mutation=0.3, mutation_rate_start=0.7):
-#     mutation_rate = max(mutation_rate_start * (1 - epoch / num_epochs), min_mutation)
-#     crossover_rate = 1 - mutation_rate
-#     return mutation_rate, crossover_rate
+def plot_predictions(best_tree, variables, X, y_true, problem_id):
+    X_dicts = [dict(zip(variables, row)) for row in X.T]
+    y_pred = np.array([best_tree.evaluate(X_dict) for X_dict in X_dicts])
 
-def run_evolution(num_epochs, population_size, variables, X_dicts, y, X_min, X_max, max_depth=4, 
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection='3d')
+
+    if problem_id != 1:
+        ax.scatter(X[0], X[1], y_true, color="red", label="True Values", alpha=0.6)
+        ax.scatter(X[0], X[1], y_pred, color="blue", label="Predicted Values", alpha=0.6)
+        ax.set_ylabel("X1")
+    else:
+        ax.scatter(X[0], y_true, color="red", label="True Values", alpha=0.6)
+        ax.scatter(X[0], y_pred, color="blue", label="Predicted Values", alpha=0.6)
+
+    # Labels
+    ax.set_xlabel("X0")
+    ax.set_zlabel("Y")
+    ax.set_title(f"Problem {problem_id} - Predictions vs True Values")
+    ax.legend()
+
+    plt.savefig(f"predictions/problem_{problem_id}_predictions.png")
+    plt.show()
+
+def run_evolution(num_epochs, population_size, problem_id, max_depth=4, 
                   tournament_size=4, elite_perc=0.5, mutation_rate=0.7, crossover_rate=0.3, n_jobs=4):
+    
+    data = np.load(f"data/problem_{problem_id}.npz")
+
+    X = data['x']  # input array
+    y = data['y']  # output array
+    print(f"X shape: {X.shape}, y shape: {y.shape}")
+
+    X_max = X.max(axis=1).max()
+    X_min = X.min(axis=1).min()
+
+    num_variables = X.shape[0]
+    variables = [f"x{i}" for i in range(0, num_variables)]
+    X_dicts = [dict(zip(variables, row)) for row in X.T]
     
     # Track the best formula across all generations
     best_overall = None
@@ -395,7 +427,7 @@ def run_evolution(num_epochs, population_size, variables, X_dicts, y, X_min, X_m
     # Run the evolution
     for epoch in tqdm(range(num_epochs), desc="Evolving Population", unit="gen"):
         # Dynamic mutation & crossover adjustments: prioritize mutation early, shift to crossover later
-        if epoch == 30:
+        if epoch == int(0.4 * num_epochs):
             mutation_rate = 0.3
             crossover_rate = 0.7
             print(f"\n-- Adjusted Mutation Rate: {mutation_rate}, Crossover Rate: {crossover_rate}")
@@ -431,38 +463,7 @@ def run_evolution(num_epochs, population_size, variables, X_dicts, y, X_min, X_m
             best_fitness = best_individual.fitness
             best_overall = copy.deepcopy(best_individual)
 
+    plot_predictions(best_overall, variables, X, y, problem_id)
+
     # return the best formula found
     return best_overall
-
-def plot_predictions(best_tree, variables, X, y_true, problem_id):
-    """
-    Plots the predicted values from the best tree against the true values in 3D.
-
-    :param best_tree: The best ExpressionTree found after evolution.
-    :param X: The original dataset (shape: (2, N) for 2D input).
-    :param y_true: The true target values.
-    """
-    # Compute predictions
-    X_dicts = [dict(zip(variables, row)) for row in X.T]
-    y_pred = np.array([best_tree.evaluate(X_dict) for X_dict in X_dicts])
-
-    # Create 3D figure
-    fig = plt.figure(figsize=(10, 7))
-    ax = fig.add_subplot(111, projection='3d')
-
-    # Scatter plot of True Values
-    ax.scatter(X[0], X[1], y_true, color="red", label="True Values", alpha=0.6)
-
-    # Scatter plot of Predicted Values
-    ax.scatter(X[0], X[1], y_pred, color="blue", label="Predicted Values", alpha=0.6)
-
-    # Labels
-    ax.set_xlabel("X0")
-    ax.set_ylabel("X1")
-    ax.set_zlabel("Y")
-    ax.set_title(f"Problem {problem_id} - Predictions vs True Values")
-    ax.legend()
-
-    plt.savefig(f"predictions/problem_{problem_id}_predictions.png")
-
-    plt.show()
