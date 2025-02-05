@@ -25,36 +25,20 @@ OPERATIONS = {
 
 class Node:
     def __init__(self, value, left=None, right=None):
-        """
-        Represents a node in the expression tree.
-
-        :param value: Can be a binary/unary operator (from OPERATIONS) or a variable/constant.
-        :param left: Left child node (None if leaf).
-        :param right: Right child node (None for unary ops and leaves).
-        """
         self.value = value
         self.left = left
         self.right = right  # Only used for binary operations
 
     def is_leaf(self):
-        """Checks if the node is a leaf (variable or constant)."""
         return self.left is None and self.right is None
 
     def is_unary(self):
-        """Checks if the node is a unary operator."""
         return self.value in UNARY_OP and self.left is not None and self.right is None
 
     def is_binary(self):
-        """Checks if the node is a binary operator."""
         return self.value in BINARY_OP and self.left is not None and self.right is not None
 
     def evaluate(self, variables):
-        """
-        Recursively evaluates the expression tree while suppressing runtime warnings and handling overflows.
-
-        :param variables: Dictionary mapping variable names to numerical values.
-        :return: Computed numerical value (with safety checks).
-        """
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)  # Suppress NumPy runtime warnings
 
@@ -75,73 +59,53 @@ class Node:
             else:
                 raise ValueError(f"Invalid node structure: {self}")
 
-            # **Handle overflow and extreme values**
-            if np.isinf(result) or np.isnan(result):  # If result is infinity or NaN, replace with a safe value
-                return float(1e6)  # Safe upper bound for large values
+            # handle overflow and extreme values
+            if np.isinf(result) or np.isnan(result):  # if result is infinity or NaN, replace with a safe value
+                return float(1e6)  # upper bound for large values
 
             result = np.clip(result, -1e6, 1e6)
             return float(result)
 
     def to_formula(self):
-        """
-        Recursively converts the tree into a human-readable mathematical formula as a string.
-        """
         if self.is_leaf():
             return str(self.value)  # Return variable name or constant
 
-        if self.is_unary():  # Unary operation (e.g., sin, cos)
+        if self.is_unary():  # unary operation
             return f"{OPERATIONS[self.value]}({self.left.to_formula()})"
 
-        if self.is_binary():  # Binary operation (e.g., +, -, *, /)
+        if self.is_binary():  # binary operation
             return f"({self.left.to_formula()} {OPERATIONS[self.value]} {self.right.to_formula()})"
 
         raise ValueError(f"Invalid node structure: {self.value}")
     
     def count_nodes(self):
-        """Recursively counts the total number of nodes in the tree."""
         left_count = self.left.count_nodes() if self.left else 0
         right_count = self.right.count_nodes() if self.right else 0
-        return 1 + left_count + right_count  # Count current node + children
+        return 1 + left_count + right_count  # count current node + children
 
-class ExpressionTree:
+class Formula:
     def __init__(self, root=None, X_dicts=None, y=None):
-        """
-        Represents the expression tree and automatically computes fitness if dataset is provided.
-
-        :param root: The root node of the tree.
-        :param X_dicts: List of dictionaries containing variable values for each sample.
-        :param y: Array of actual output values.
-        """
         self.root = root
         self.fitness = None
-        self.num_nodes = 0  # Initialize node count
+        self.num_nodes = 0
 
-        self.compute_nodes()  # Update node count
+        self.compute_nodes()  # update node count
 
-        # Compute fitness if dataset is provided
+        # Compute fitness if dataset is provided (otherwise fitness is None)
         if X_dicts is not None and y is not None:
             self.compute_fitness(X_dicts, y)
 
 
     def evaluate(self, X_values):
-        """
-        Evaluates the expression tree for given input values.
-
-        :param X_values: Dictionary mapping variable names to numerical values.
-        :return: Computed value.
-        """
         return self.root.evaluate(X_values)
 
     def to_formula(self):
         return self.root.to_formula() if self.root else "Empty Tree"
 
     def compute_nodes(self):
-        """Updates the total number of nodes in the tree."""
         self.num_nodes = self.root.count_nodes() if self.root else 0
 
     def compute_fitness(self, X_dicts, y):
-        """Computes the fitness using Mean Squared Error (MSE) and handles numerical issues."""
-        
         if self.root is None:  # Avoid computing fitness for empty trees
             self.fitness = float('inf')
             return self.fitness
@@ -167,7 +131,6 @@ class ExpressionTree:
         return self.fitness
 
     def update(self, X_dicts, y):
-        """Ensures node count and fitness are updated correctly."""
         self.compute_nodes()  # Ensure node count is up-to-date
         self.compute_fitness(X_dicts, y)  # Ensure fitness is accurate
 
@@ -186,14 +149,6 @@ def select_random_node(node, parent=None):
 
 # =============== GENERATION ===============
 def generate_random_tree(variables, X_min, X_max, max_depth=3, p_const=0.2):
-    """
-    Recursively generates a valid symbolic regression tree.
-
-    :param variables: List of variable names (e.g., ["x0", "x1", ...]).
-    :param max_depth: Maximum depth of the generated tree.
-    :param p_const: Probability of generating a constant at leaf nodes.
-    :return: A valid expression tree (Node).
-    """
     if max_depth == 0 or (random.random() < p_const):  
         # Generate a leaf node (either a variable or a constant)
         if random.random() < 0.5:
@@ -226,7 +181,7 @@ def generate_random_tree(variables, X_min, X_max, max_depth=3, p_const=0.2):
 
 def generate_population(population_size, variables, X_dicts, y, X_min, X_max, max_depth=3):
     return Parallel(n_jobs=4)(
-        delayed(ExpressionTree)(generate_random_tree(variables, X_min, X_max, max_depth), X_dicts, y) 
+        delayed(Formula)(generate_random_tree(variables, X_min, X_max, max_depth), X_dicts, y) 
         for _ in range(population_size)
     )
 
@@ -277,17 +232,6 @@ def subtree_mutation(tree, variables, X_dicts, y, X_min, X_max):
 
 
 def point_mutation(tree, variables, X_dicts, y, X_min, X_max):
-    """
-    Performs point mutation by modifying a randomly selected node in the tree.
-
-    :param tree: ExpressionTree to mutate.
-    :param variables: List of variable names.
-    :param X_dicts: Input dataset as a list of dictionaries.
-    :param y: Target values.
-    :param X_min: Minimum values for each feature.
-    :param X_max: Maximum values for each feature.
-    :return: Mutated ExpressionTree.
-    """
     tree_copy = copy.deepcopy(tree)
     node_to_mutate, _ = select_random_node(tree_copy.root)
 
@@ -322,13 +266,6 @@ def point_mutation(tree, variables, X_dicts, y, X_min, X_max):
 
 # ================== CROSSOVER ==================
 def crossover(parent1, parent2, X_dicts, y):
-    """
-    Performs subtree crossover between two parents.
-    
-    :param parent1: First parent ExpressionTree.
-    :param parent2: Second parent ExpressionTree.
-    :return: One offspring ExpressionTree.
-    """
     parent1_copy = copy.deepcopy(parent1)
     parent2_copy = copy.deepcopy(parent2)
 
@@ -352,6 +289,7 @@ def crossover(parent1, parent2, X_dicts, y):
     parent1_copy.update(X_dicts, y)
 
     return parent1_copy  # Returns a single offspring
+
 # ================== EVOLUTION ==================
 def offspring_generation(population, variables, X_dicts, y, X_min, X_max, tournament_size=4, elite_perc=0.5, mutation_rate=0.3, crossover_rate=0.7):
     

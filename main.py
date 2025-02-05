@@ -24,7 +24,7 @@ X_dicts = [dict(zip(variables, row)) for row in X.T]
 # print(f"Best formula found: {best_formula}"
 #       f"\nFitness: {best_formula.fitness:4e}")
 
-best_formula = ExpressionTree(
+best_formula = Formula(
     Node(np.divide,
         Node(np.divide,
             Node(np.divide,
