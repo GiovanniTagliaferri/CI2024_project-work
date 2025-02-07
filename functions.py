@@ -1,9 +1,9 @@
 import numpy as np
 import random
 import warnings
+warnings.filterwarnings("ignore")
 import copy
 from tqdm import tqdm
-from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
 
 
@@ -24,6 +24,7 @@ OPERATIONS = {
 
 
 class Node:
+    "Class that represents a component of a formula, such as variable, constant or operation."
     def __init__(self, value, left=None, right=None):
         self.value = value
         self.left = left
@@ -39,32 +40,26 @@ class Node:
         return self.value in BINARY_OP and self.left is not None and self.right is not None
 
     def evaluate(self, variables):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=RuntimeWarning)  # Suppress NumPy runtime warnings
+        if self.is_leaf():
+            return variables[self.value] if isinstance(self.value, str) else self.value
+        
+        if self.is_unary():
+            return self.value(self.left.evaluate(variables))
+        
+        if self.is_binary():
+            left_value = self.left.evaluate(variables)
+            right_value = self.right.evaluate(variables)
 
-            if self.is_leaf():
-                return variables[self.value] if isinstance(self.value, str) else self.value
+            return self.value(left_value, right_value)
+        
+        try:
+            result = self.value(self.left.evaluate(variables))
+            if np.any(np.isinf(result)) or np.any(np.isnan(result)):
+                return None
+            return np.clip(result, -1e6, 1e6)
+        except (ZeroDivisionError, ValueError, FloatingPointError):
+            return None
 
-            if self.is_unary():
-                result = self.value(self.left.evaluate(variables))
-            elif self.is_binary():
-                left_value = self.left.evaluate(variables)
-                right_value = self.right.evaluate(variables)
-
-                # Prevent division by zero
-                if self.value == np.divide and abs(right_value) < 1e-6:
-                    return 1  # Safe default value
-
-                result = self.value(left_value, right_value)
-            else:
-                raise ValueError(f"Invalid node structure: {self}")
-
-            # handle overflow and extreme values
-            if np.isinf(result) or np.isnan(result):  # if result is infinity or NaN, replace with a safe value
-                return float(1e6)  # upper bound for large values
-
-            result = np.clip(result, -1e6, 1e6)
-            return float(result)
 
     def to_formula(self):
         if self.is_leaf():
@@ -84,6 +79,7 @@ class Node:
         return 1 + left_count + right_count  # count current node + children
 
 class Formula:
+    "Class that represents a formula as a tree of Nodes where each one is an operation, a constant or a variable."
     def __init__(self, root=None, X_dicts=None, y=None):
         self.root = root
         self.fitness = None
@@ -110,24 +106,15 @@ class Formula:
             self.fitness = float('inf')
             return self.fitness
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=RuntimeWarning)
+        predictions = np.array([self.evaluate(X_dict) for X_dict in X_dicts])
 
-            try:
-                predictions = np.array([self.evaluate(X_dict) for X_dict in X_dicts])
-
-                # Handle invalid predictions (NaN or Inf)
-                if np.any(np.isnan(predictions)) or np.any(np.isinf(predictions)):
-                    self.fitness = float('inf')  # Penalize invalid trees
-                else:
-                    # Use np.nan_to_num to ensure fitness does not become NaN/inf
-                    mse = np.mean((predictions - y) ** 2)
-                    self.fitness = np.nan_to_num(100 * mse, nan=1e6, posinf=1e6, neginf=1e6)  # Clip extreme values
-                
-            except Exception as e:
-                self.fitness = float('inf')  # If evaluation crashes, set high fitness
-                print(f"Warning: Fitness evaluation error: {e}")
-
+        # check for invalid predictions: even if one is NaN or inf, fitness is inf
+        if np.any(np.isnan(predictions)) or np.any(np.isinf(predictions)):
+            self.fitness = float('inf')
+            return self.fitness
+        
+        # compute the mean squared error
+        self.fitness = 100* np.mean((predictions - y) ** 2)
         return self.fitness
 
     def update(self, X_dicts, y):
@@ -135,8 +122,8 @@ class Formula:
         self.compute_fitness(X_dicts, y)  # Ensure fitness is accurate
 
 # =============== FUNCTIONS ===============
-# Select a random node in the tree
 def select_random_node(node, parent=None):
+    "Select a random Node in a Formula by passing the root node, returning both the chosen node and its parent."
     if node is None or (node.is_leaf() and random.random() < 0.5):  # Select leaf nodes less frequently
         return node, parent
 
@@ -149,8 +136,10 @@ def select_random_node(node, parent=None):
 
 # =============== GENERATION ===============
 def generate_random_tree(variables, X_min, X_max, max_depth=3, p_const=0.2):
+    "Return the root node of a tree (Formula) generated randomly, ensuring that it is valid."
+
     if max_depth == 0 or (random.random() < p_const):  
-        # Generate a leaf node (either a variable or a constant)
+        # Generate a leaf node (a variable or a constant)
         if random.random() < 0.5:
             return Node(random.choice(variables))  # Variable node
         return Node(np.random.uniform(X_min, X_max))  # Constant node
@@ -161,17 +150,6 @@ def generate_random_tree(variables, X_min, X_max, max_depth=3, p_const=0.2):
         left_child = generate_random_tree(variables, X_min, X_max, max_depth - 1, p_const)
         right_child = generate_random_tree(variables,X_min, X_max, max_depth - 1, p_const)
         
-        # Ensure the right child of a division operation is never zero
-        if op == np.divide:
-            max_attempts = 10  # Avoid infinite loops
-            attempts = 0
-            while isinstance(right_child.value, (int, float)) and abs(right_child.value) < 1e-3:
-                if attempts >= max_attempts:
-                    right_child = Node(1.0)  # Fallback to a safe constant
-                    break
-                right_child = generate_random_tree(variables, X_min, X_max, max_depth - 1, p_const)
-                attempts += 1
-
         return Node(op, left_child, right_child)
 
     # Unary operation (must have exactly one child)
@@ -180,13 +158,20 @@ def generate_random_tree(variables, X_min, X_max, max_depth=3, p_const=0.2):
 
 
 def generate_population(population_size, variables, X_dicts, y, X_min, X_max, max_depth=3):
-    return Parallel(n_jobs=4)(
-        delayed(Formula)(generate_random_tree(variables, X_min, X_max, max_depth), X_dicts, y) 
-        for _ in range(population_size)
-    )
+    "Generate a population of random valid generated Formula elements."
+    population = []
+    while len(population) < population_size:
+        tree = generate_random_tree(variables, X_min, X_max, max_depth)
+        formula = Formula(tree, X_dicts, y)
+        if formula.fitness is not None and not np.isinf(formula.fitness):
+            population.append(formula)
+    
+    return population
 
 # =============== SELECTION ==================
 def tournament_selection(population, tournament_size=5, elite_perc=0.8, size_bias_prob=0.3):
+    "Perform tournament selection to select a parent."
+
     # Sort population by fitness (lower fitness is better)
     sorted_population = sorted(population, key=lambda tree: tree.fitness)
 
@@ -211,6 +196,7 @@ def tournament_selection(population, tournament_size=5, elite_perc=0.8, size_bia
 
 # =============== MUTATION ===============
 def subtree_mutation(tree, variables, X_dicts, y, X_min, X_max):
+    "Perform subtree mutation of a Formula by mutating a random part of it."
     tree_copy = copy.deepcopy(tree)
     node_to_mutate, parent = select_random_node(tree_copy.root)
 
@@ -232,6 +218,7 @@ def subtree_mutation(tree, variables, X_dicts, y, X_min, X_max):
 
 
 def point_mutation(tree, variables, X_dicts, y, X_min, X_max):
+    "Perform point mutation of a Formula by mutation a random node of it."
     tree_copy = copy.deepcopy(tree)
     node_to_mutate, _ = select_random_node(tree_copy.root)
 
@@ -266,6 +253,7 @@ def point_mutation(tree, variables, X_dicts, y, X_min, X_max):
 
 # ================== CROSSOVER ==================
 def crossover(parent1, parent2, X_dicts, y):
+    "Perform crossover between two Formula to generate a child one."
     parent1_copy = copy.deepcopy(parent1)
     parent2_copy = copy.deepcopy(parent2)
 
@@ -291,8 +279,9 @@ def crossover(parent1, parent2, X_dicts, y):
     return parent1_copy  # Returns a single offspring
 
 # ================== EVOLUTION ==================
-def offspring_generation(population, variables, X_dicts, y, X_min, X_max, tournament_size=4, elite_perc=0.5, mutation_rate=0.3, crossover_rate=0.7):
-    
+def offspring_generation(population, variables, X_dicts, y, X_min, X_max, tournament_size=5, elite_perc=0.5, mutation_rate=0.3, crossover_rate=0.7):
+    "Function that wraps the process to generate the offspring."
+
     # Select first parent
     parent1 = tournament_selection(population, tournament_size)
 
@@ -310,9 +299,15 @@ def offspring_generation(population, variables, X_dicts, y, X_min, X_max, tourna
         else:
             offspring1 = subtree_mutation(offspring1, variables, X_dicts, y, X_min, X_max)
 
+
+    # evaluate the offspring: if the fitness is inf
+    if np.isinf(offspring1.fitness) or np.isnan(offspring1.fitness):
+        return None
+    
     return offspring1
 
 def plot_predictions(best_tree, variables, X, y_true, problem_id):
+    "Plot together the distribution of the original output and the one obtained by applying the generated Formula on the inputs."
     X_dicts = [dict(zip(variables, row)) for row in X.T]
     y_pred = np.array([best_tree.evaluate(X_dict) for X_dict in X_dicts])
 
@@ -333,12 +328,15 @@ def plot_predictions(best_tree, variables, X, y_true, problem_id):
     ax.set_title(f"Problem {problem_id} - Predictions vs True Values")
     ax.legend()
 
-    plt.savefig(f"predictions/problem_{problem_id}_predictions.png")
+    # plt.savefig(f"predictions/problem_{problem_id}_predictions.png")
     plt.show()
 
 def run_evolution(num_epochs, population_size, problem_id, max_depth=4, 
-                  tournament_size=4, elite_perc=0.5, mutation_rate=0.7, crossover_rate=0.3, n_jobs=4):
+                  tournament_size=5, elite_perc=0.8, mutation_rate=0.7, crossover_rate=0.3):
+    "Function that performs the whole evolution process and returns the final Formula."
     
+    print(f"Finding formula for problem {problem_id}")
+
     data = np.load(f"data/problem_{problem_id}.npz")
 
     X = data['x']  # input array
@@ -356,8 +354,9 @@ def run_evolution(num_epochs, population_size, problem_id, max_depth=4,
     best_overall = None
     best_fitness = float('inf')
 
-    # Step 1: Initialize Population
+    # Initialize Population
     population = generate_population(population_size, variables, X_dicts, y, X_min, X_max, max_depth)
+    print(f"Initial Population Size: {len(population)}")
 
     # number of children to generate at each generation (60% of the population)
     num_children = int(0.6 * population_size)
@@ -370,22 +369,18 @@ def run_evolution(num_epochs, population_size, problem_id, max_depth=4,
             crossover_rate = 0.7
             print(f"\n-- Adjusted Mutation Rate: {mutation_rate}, Crossover Rate: {crossover_rate}")
 
+        # Ensure valid offspring and maintain population size
         new_population = []
 
-        # Generate offspring in parallel
-        offspring_list = Parallel(n_jobs=n_jobs)(
-            delayed(offspring_generation)(population, variables, X_dicts, y, X_min, X_max, tournament_size, elite_perc, mutation_rate, crossover_rate)
-            for _ in range(num_children)
-        )
-
-        # Ensure valid offspring and maintain population size
-        new_population.extend([child for child in offspring_list if child is not None])
+        while len(new_population) < num_children:
+            offspring = offspring_generation(population, variables, X_dicts, y, X_min, X_max, tournament_size, elite_perc, mutation_rate, crossover_rate)
+            if offspring is not None:
+                new_population.append(offspring)
         
         # complete the population generating random trees to balance exploration and exploitation
         if len(new_population) < population_size:
             new_population.extend(list(generate_population(population_size - len(new_population), variables, X_dicts, y, X_min, X_max, max_depth)))
-
-
+        
         # Replace old population with new one
         population = new_population
 
