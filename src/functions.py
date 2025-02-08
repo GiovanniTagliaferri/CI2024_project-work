@@ -40,6 +40,7 @@ class Node:
         return self.value in BINARY_OP and self.left is not None and self.right is not None
 
     def evaluate(self, variables):
+        "Compute the value of the node based on the input variables."
         if self.is_leaf():
             return variables[self.value] if isinstance(self.value, str) else self.value
         
@@ -60,23 +61,24 @@ class Node:
         except (ZeroDivisionError, ValueError, FloatingPointError):
             return None
 
-
     def to_formula(self):
+        "Print the formula in a more readable format."
         if self.is_leaf():
             return str(self.value)  # Return variable name or constant
 
-        if self.is_unary():  # unary operation
+        if self.is_unary():
             return f"{OPERATIONS[self.value]}({self.left.to_formula()})"
 
-        if self.is_binary():  # binary operation
+        if self.is_binary():
             return f"({self.left.to_formula()} {OPERATIONS[self.value]} {self.right.to_formula()})"
 
         raise ValueError(f"Invalid node structure: {self.value}")
     
     def count_nodes(self):
+        "Count the number of nodes in the Formula."
         left_count = self.left.count_nodes() if self.left else 0
         right_count = self.right.count_nodes() if self.right else 0
-        return 1 + left_count + right_count  # count current node + children
+        return 1 + left_count + right_count
 
 class Formula:
     "Class that represents a formula as a tree of Nodes where each one is an operation, a constant or a variable."
@@ -91,17 +93,20 @@ class Formula:
         if X_dicts is not None and y is not None:
             self.compute_fitness(X_dicts, y)
 
-
     def evaluate(self, X_values):
+        "Evaluate the Formula by passing the input variables."
         return self.root.evaluate(X_values)
 
     def to_formula(self):
+        "Print the formula in a more readable format."
         return self.root.to_formula() if self.root else "Empty Tree"
 
     def compute_nodes(self):
+        "Compute the number of nodes in the Formula."
         self.num_nodes = self.root.count_nodes() if self.root else 0
 
     def compute_fitness(self, X_dicts, y):
+        "Compute the fitness of the Formula by comparing the predictions with the true values."
         if self.root is None:  # Avoid computing fitness for empty trees
             self.fitness = float('inf')
             return self.fitness
@@ -118,12 +123,14 @@ class Formula:
         return self.fitness
 
     def update(self, X_dicts, y):
+        "Recompute the number of nodes and fitness of the Formula."
         self.compute_nodes()  # Ensure node count is up-to-date
         self.compute_fitness(X_dicts, y)  # Ensure fitness is accurate
 
 # =============== FUNCTIONS ===============
 def select_random_node(node, parent=None):
     "Select a random Node in a Formula by passing the root node, returning both the chosen node and its parent."
+
     if node is None or (node.is_leaf() and random.random() < 0.5):  # Select leaf nodes less frequently
         return node, parent
 
@@ -159,44 +166,44 @@ def generate_random_tree(variables, X_min, X_max, max_depth=3, p_const=0.2):
 
 def generate_population(population_size, variables, X_dicts, y, X_min, X_max, max_depth=3):
     "Generate a population of random valid generated Formula elements."
+
     population = []
     while len(population) < population_size:
         tree = generate_random_tree(variables, X_min, X_max, max_depth)
         formula = Formula(tree, X_dicts, y)
-        if formula.fitness is not None and not np.isinf(formula.fitness):
+        if formula.fitness is not None and not np.isinf(formula.fitness): # Ensure valid fitness
             population.append(formula)
     
     return population
 
 # =============== SELECTION ==================
 def tournament_selection(population, tournament_size=5, elite_perc=0.8, size_bias_prob=0.3):
-    "Perform tournament selection to select a parent."
+    """Perform tournament selection to select a parent: create a tournamet pool by combining elite and non-elite individuals in different proportions,
+    then select randomly from the pool, otherwise select the smallest tree with probability `size_bias_prob`.""" 
 
-    # Sort population by fitness (lower fitness is better)
     sorted_population = sorted(population, key=lambda tree: tree.fitness)
 
-    # Determine elite and non-elite sizes
+    # select elite
     elite_size = max(1, int(elite_perc * tournament_size))  # Ensure at least 1 elite individual
     non_elite_size = tournament_size - elite_size
-
-    # Select elite candidates (best fitness individuals)
     elite_candidates = sorted_population[:elite_size]  
 
-    # Select non-elite candidates randomly from the rest of the population
+    # select non-elite candidates
     non_elite_candidates = random.sample(sorted_population[elite_size:], non_elite_size) if len(sorted_population) > elite_size else []
 
-    # Combine both groups into the tournament pool
+    # create the pool
     tournament_pool = elite_candidates + non_elite_candidates
 
-    # Introduce size bias: select the individual with the least nodes with probability `size_bias_prob`
+    # choose the parent either by selecting the smallest tree or randomly from the tournament pool
     if random.random() < size_bias_prob:
-        return min(tournament_pool, key=lambda tree: tree.num_nodes)  # Select the smallest tree
+        return min(tournament_pool, key=lambda tree: tree.num_nodes)  # choose the smallest tree
     else:
-        return random.choice(tournament_pool)  # Default: Random selection from the tournament
+        return random.choice(tournament_pool) # choose randomly from the tournament pool
 
 # =============== MUTATION ===============
 def subtree_mutation(tree, variables, X_dicts, y, X_min, X_max):
     "Perform subtree mutation of a Formula by mutating a random part of it."
+
     tree_copy = copy.deepcopy(tree)
     node_to_mutate, parent = select_random_node(tree_copy.root)
 
@@ -218,42 +225,40 @@ def subtree_mutation(tree, variables, X_dicts, y, X_min, X_max):
 
 
 def point_mutation(tree, variables, X_dicts, y, X_min, X_max):
-    "Perform point mutation of a Formula by mutation a random node of it."
+    "Perform point mutation of a Formula by mutating a random node of it, changing the operation or the value."
+
     tree_copy = copy.deepcopy(tree)
     node_to_mutate, _ = select_random_node(tree_copy.root)
 
     if node_to_mutate is None:
-        return tree_copy  # No mutation happened
+        return tree_copy  # no mutation 
 
-    # Apply mutation based on node type
     if node_to_mutate.is_binary():
-        # Change to a different binary operator
         node_to_mutate.value = random.choice([op for op in BINARY_OP if op != node_to_mutate.value])
     
     elif node_to_mutate.is_unary():
-        # Change to a different unary operator
         node_to_mutate.value = random.choice([op for op in UNARY_OP if op != node_to_mutate.value])
 
     elif node_to_mutate.is_leaf():
-        if isinstance(node_to_mutate.value, str):  # Variable node
-            # Change to another variable (ensuring it’s different)
-            node_to_mutate.value = random.choice([var for var in variables if var != node_to_mutate.value])
+        if isinstance(node_to_mutate.value, str):  # variable node
+            # Change to another variable ensuring it’s different. For problem 1 there is only one variable available (x0), so no change is possible
+            if len(variables) != 1:
+                node_to_mutate.value = random.choice([var for var in variables if var != node_to_mutate.value])
         
-        elif isinstance(node_to_mutate.value, (int, float)):  # Constant node
+        elif isinstance(node_to_mutate.value, (int, float)):  # constant node
             # Slightly modify the constant while keeping it within `X_min` and `X_max`
             constant_shift = random.uniform(-0.5, 0.5) * (X_max.max() - X_min.min())  # Scale change to data range
             new_value = node_to_mutate.value + constant_shift
             node_to_mutate.value = np.clip(new_value, X_min.min(), X_max.max())  # Ensure valid range
 
-    # Compute fitness after mutation
+    # compute fitness and node count after mutation
     tree_copy.update(X_dicts, y)
-
     return tree_copy
 
 
 # ================== CROSSOVER ==================
 def crossover(parent1, parent2, X_dicts, y):
-    "Perform crossover between two Formula to generate a child one."
+    "Perform crossover between two Formula to generate a new one."
     parent1_copy = copy.deepcopy(parent1)
     parent2_copy = copy.deepcopy(parent2)
 
@@ -285,14 +290,14 @@ def offspring_generation(population, variables, X_dicts, y, X_min, X_max, tourna
     # Select first parent
     parent1 = tournament_selection(population, tournament_size)
 
-    # Perform crossover (with probability)
+    # decide if perform crossover or not
     if random.random() < crossover_rate:
         parent2 = tournament_selection(population, tournament_size)
         offspring1 = crossover(parent1, parent2, X_dicts, y)  # Apply crossover
     else:
         offspring1 = copy.deepcopy(parent1)  # No crossover, just copy the parent
 
-    # change mutation depending on the probability
+    # decide if perform mutation or not
     if random.random() < mutation_rate:
         if random.random() < 0.5:
             offspring1 = point_mutation(offspring1, variables, X_dicts, y, X_min, X_max)
@@ -337,18 +342,21 @@ def run_evolution(num_epochs, population_size, problem_id, max_depth=4,
     
     print(f"Finding formula for problem {problem_id}")
 
-    data = np.load(f"data/problem_{problem_id}.npz")
+    # Load the data for the problem
+    data = np.load(f"./data/problem_{problem_id}.npz")
 
     X = data['x']  # input array
     y = data['y']  # output array
     print(f"X shape: {X.shape}, y shape: {y.shape}")
 
+    # get the min and max values of the input data to generate random constants within this range
     X_max = X.max(axis=1).max()
     X_min = X.min(axis=1).min()
 
     num_variables = X.shape[0]
     variables = [f"x{i}" for i in range(0, num_variables)]
     X_dicts = [dict(zip(variables, row)) for row in X.T]
+    print(f"Variables: {variables}")
     
     # Track the best formula across all generations
     best_overall = None
@@ -358,7 +366,7 @@ def run_evolution(num_epochs, population_size, problem_id, max_depth=4,
     population = generate_population(population_size, variables, X_dicts, y, X_min, X_max, max_depth)
     print(f"Initial Population Size: {len(population)}")
 
-    # number of children to generate at each generation (60% of the population)
+    # number of children to generate through the genetic algorithm at each generation (60% of the population)
     num_children = int(0.6 * population_size)
 
     # Run the evolution
@@ -369,7 +377,7 @@ def run_evolution(num_epochs, population_size, problem_id, max_depth=4,
             crossover_rate = 0.7
             print(f"\n-- Adjusted Mutation Rate: {mutation_rate}, Crossover Rate: {crossover_rate}")
 
-        # Ensure valid offspring and maintain population size
+        # generate valid offspring
         new_population = []
 
         while len(new_population) < num_children:
@@ -381,7 +389,7 @@ def run_evolution(num_epochs, population_size, problem_id, max_depth=4,
         if len(new_population) < population_size:
             new_population.extend(list(generate_population(population_size - len(new_population), variables, X_dicts, y, X_min, X_max, max_depth)))
         
-        # Replace old population with new one
+        # replace old population with new one
         population = new_population
 
         best_individual = min(population, key=lambda tree: tree.fitness)

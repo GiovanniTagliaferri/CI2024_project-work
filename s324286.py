@@ -3,8 +3,6 @@ import numpy as np
 def f1(x):
     return np.sin(x)
 
-import numpy as np
-
 def f2(x):
     x0, x1, x2 = x[0, :], x[1, :], x[2, :]
     return np.arctan(np.arctan((x0 * np.arccos(np.arctan(np.sin(-4.999400642356134)))) - np.arctan((x0 * 2.059598428913916) - x1)) * np.exp(x1 / -4.999400642356134) - np.arctan(np.arctan(np.arctan((x0 * np.arccos(np.arctan(np.sin(-4.999400642356134)))) - np.arctan((x0 * 2.059598428913916) - x1)) * np.exp(x1 / -4.999400642356134) - np.arctan(np.arctan(np.arctan((x0 * np.arccos(np.arctan(np.sin(x1)))) - np.arctan((x0 * 3.9445187476861197) - x1)) * np.arccos(np.arctan(np.sin(0.08290591736631647))) - np.arctan(np.arctan(np.arctan((x0 * np.arccos(np.arctan(np.sin(x1)))) - np.arctan((x0 * 3.9445187476861197) - x1)) * np.arccos(np.arctan(np.sin(x1))) - np.arctan((x0 * -4.875064411428305) - x2)) * -4.875064411428305 - x2)) * -4.875064411428305 - x2)) * -4.875064411428305 - x2)) * np.exp((4.998785132288306 - (-4.999400642356134)) + 4.998785132288306)
