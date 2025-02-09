@@ -40,7 +40,7 @@ class Node:
         return self.value in BINARY_OP and self.left is not None and self.right is not None
 
     def evaluate(self, variables):
-        "Compute the value of the node based on the input variables."
+        "Compute the value of the node based on the input variables. Values like inf or nan are returned as is, they are handled then in the fitness computation."
         if self.is_leaf():
             return variables[self.value] if isinstance(self.value, str) else self.value
         
@@ -53,13 +53,7 @@ class Node:
 
             return self.value(left_value, right_value)
         
-        try:
-            result = self.value(self.left.evaluate(variables))
-            if np.any(np.isinf(result)) or np.any(np.isnan(result)):
-                return None
-            return np.clip(result, -1e6, 1e6)
-        except (ZeroDivisionError, ValueError, FloatingPointError):
-            return None
+        raise ValueError(f"Invalid node structure: {self}")
 
     def to_formula(self):
         "Print the formula in a more readable format."
@@ -106,7 +100,9 @@ class Formula:
         self.num_nodes = self.root.count_nodes() if self.root else 0
 
     def compute_fitness(self, X_dicts, y):
-        "Compute the fitness of the Formula by comparing the predictions with the true values."
+        """Compute the fitness of the Formula by comparing the predictions with the true values. If some predictions are invalid (nan or inf), the fitness is set to inf,
+        penalizing the formula."""
+
         if self.root is None:  # Avoid computing fitness for empty trees
             self.fitness = float('inf')
             return self.fitness
@@ -173,7 +169,7 @@ def generate_population(population_size, variables, X_dicts, y, X_min, X_max, ma
         formula = Formula(tree, X_dicts, y)
         if formula.fitness is not None and not np.isinf(formula.fitness): # Ensure valid fitness
             population.append(formula)
-    
+        
     return population
 
 # =============== SELECTION ==================

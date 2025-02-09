@@ -8,7 +8,7 @@ tournament_size = 5
 
 
 ### problem 2
-depth = 3
+depth = 6
 pop_size = 500
 num_epochs = 200
 tournament_size = 5
@@ -35,7 +35,7 @@ tournament_size = 5
 
 
 ### problem 5
-depth = 3
+depth = 6
 pop_size = 100
 num_epochs = 200
 tournament_size = 5

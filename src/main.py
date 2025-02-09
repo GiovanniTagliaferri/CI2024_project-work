@@ -4,7 +4,7 @@ from functions import *
 depth = 3
 pop_size = 100
 num_epochs = 100
-problem_id = 1
+problem_id = 2
 
 best_formula = run_evolution(num_epochs, pop_size, problem_id, depth)
 print(f"Best formula found: {best_formula}"
