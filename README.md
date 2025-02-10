@@ -12,4 +12,4 @@ This GitHub repository is structured as follows:
   - `functions.py` includes all the functions used to develop the algorithm.
   - `main.py` allows running the evolution process for a problem, specifying its ID and initial parameters.
 
-Further details can be found in the file `CI2024_final-report.pdf`.
+Further details can be found in the file `CI2024_final-report_s324286.pdf`.
