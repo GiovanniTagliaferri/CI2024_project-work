@@ -26,7 +26,7 @@ def symreg(problem_id):
     
     print(f"MSE for problem {problem_id}: {100 * np.mean((f(x=X) - y) ** 2):4e}")
 
-# Run the corresponding formula for each problem to comute the MSE
+# Run the corresponding formula for each problem to compute the MSE
 for i in range(1, 9):
     symreg(i)
 
